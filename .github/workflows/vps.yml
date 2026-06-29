@@ -1,0 +1,35 @@
+name: Free VPS Ngrok
+
+on:
+  workflow_dispatch: # Cho phép bạn bấm nút kích hoạt chạy bằng tay
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Khởi tạo môi trường và cài đặt Ngrok
+        run: |
+          curl -s https://amazonaws.com | sudo tee /etc/apt/trusted.gpg.sh/ngrok.asc >/dev/null
+          echo "deb https://amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+          sudo apt update && sudo apt install ngrok -y
+
+      - name: Cấu hình Token và thiết lập mật khẩu SSH
+        env:
+          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+        run: |
+          ngrok config add-authtoken $NGROK_AUTH_TOKEN
+          sudo useradd -m vpsuser
+          sudo usermod -aG sudo vpsuser
+          echo "vpsuser:MậtKhẩuCủaBạn123" | sudo chpasswd # Thay đổi mật khẩu tại đây
+
+      - name: Mở cổng SSH qua Ngrok
+        run: |
+          sudo service ssh start
+          ngrok tcp 22 --log=stdout > ngrok.log &
+          sleep 5
+          cat ngrok.log | grep -oE "tcp://.*" # Lệnh này để in đường dẫn kết nối ra màn hình log
+
+      - name: Giữ cho máy ảo không bị tắt ngay lập tức
+        run: |
+          echo "VPS đang chạy... Bạn có thể kết nối ngay bây giờ."
+          sleep 21600 # Giữ máy ảo chạy trong 6 tiếng (21600 giây)
