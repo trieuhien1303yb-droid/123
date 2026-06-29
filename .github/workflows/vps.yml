@@ -1,35 +1,39 @@
-name: Free VPS Ngrok
+name: GitHub Actions VPS via ngrok
 
-on:
-  workflow_dispatch: # Cho phép bạn bấm nút kích hoạt chạy bằng tay
+on: 
+  workflow_dispatch: # Cho phép bạn nhấn nút "Run" thủ công trên web
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Khởi tạo môi trường và cài đặt Ngrok
-        run: |
-          curl -s https://amazonaws.com | sudo tee /etc/apt/trusted.gpg.sh/ngrok.asc >/dev/null
-          echo "deb https://amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
-          sudo apt update && sudo apt install ngrok -y
+    - name: Cập nhật hệ thống và cài đặt OpenSSH
+      run: |
+        sudo apt update
+        sudo apt install -y openssh-server
+        sudo mkdir /var/run/sshd
+        echo "runneradmin:${{ secrets.SSH_PASSWORD }}" | sudo chpasswd
+        echo "PermitRootLogin yes" | sudo tee -a /etc/ssh/sshd_config
+        sudo service ssh start
 
-      - name: Cấu hình Token và thiết lập mật khẩu SSH
-        env:
-          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
-        run: |
-          ngrok config add-authtoken $NGROK_AUTH_TOKEN
-          sudo useradd -m vpsuser
-          sudo usermod -aG sudo vpsuser
-          echo "vpsuser:MậtKhẩuCủaBạn123" | sudo chpasswd # Thay đổi mật khẩu tại đây
+    - name: Tải và cài đặt ngrok
+      run: |
+        curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+        echo "deb https://ngrok-agent.s3.amazonaws.com/ buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+        sudo apt update && sudo apt install ngrok
 
-      - name: Mở cổng SSH qua Ngrok
-        run: |
-          sudo service ssh start
-          ngrok tcp 22 --log=stdout > ngrok.log &
-          sleep 5
-          cat ngrok.log | grep -oE "tcp://.*" # Lệnh này để in đường dẫn kết nối ra màn hình log
+    - name: Cấu hình Authtoken cho ngrok
+      run: |
+        ngrok config add-authtoken ${{ secrets.NGROK_AUTHTOKEN }}
 
-      - name: Giữ cho máy ảo không bị tắt ngay lập tức
-        run: |
-          echo "VPS đang chạy... Bạn có thể kết nối ngay bây giờ."
-          sleep 21600 # Giữ máy ảo chạy trong 6 tiếng (21600 giây)
+    - name: Kích hoạt Tunnel và xuất địa chỉ kết nối
+      run: |
+        # Chạy ngrok ngầm ở cổng 22 (SSH), chọn region Asia (ap) để giảm ping
+        ngrok tcp --region ap 22 &
+        sleep 5 # Đợi 5 giây để ngrok khởi tạo đường truyền
+        
+        # Lấy địa chỉ IP công khai từ API nội bộ của ngrok và hiển thị ra màn hình log
+        curl --silent http://127.0.0.1:4040/api/tunnels | jq -r '.tunnels[0].public_url'
+        
+        # Giữ cho máy ảo không bị tắt ngay lập tức (Chạy liên tục trong 6 tiếng tối đa của GitHub Actions)
+        sleep 21600
